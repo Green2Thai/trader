@@ -1,0 +1,56 @@
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    server {
+        listen 80;
+        server_name localhost;
+
+        # 1. JavaScript & Static Files (Frontend)
+        location / {
+            root   /usr/share/nginx/html;
+            index  index.html index.htm;
+        }
+
+        # 2. PHP-FPM Routing
+        location ~ \.php$ {
+            fastcgi_pass   php-app:9000; # ส่งไปที่ Service php-app ใน Docker
+            fastcgi_index  index.php;
+            include        fastcgi_params;
+            fastcgi_param  SCRIPT_FILENAME  /var/www/html$fastcgi_script_name;
+        }
+
+        # 3. Python API Routing (พร้อม CORS สำหรับ GitHub Pages)
+        location /api/python/ {
+            # --- เริ่มต้นส่วนตั้งค่า CORS ---
+            # อนุญาตให้ทุกโดเมนเข้าถึงได้ (เปลี่ยน * เป็น URL ของ GitHub Pages ได้ถ้าต้องการระบุเจาะจง)
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
+
+            # จัดการ Preflight Request (OPTIONS) ที่ Browser ส่งมาตรวจสอบก่อน
+            if ($request_method = 'OPTIONS') {
+                add_header 'Access-Control-Allow-Origin' '*';
+                add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS';
+                add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization';
+                add_header 'Access-Control-Max-Age' 1728000;
+                add_header 'Content-Type' 'text/plain; charset=utf-8';
+                add_header 'Content-Length' 0;
+                return 204;
+            }
+            # --- จบส่วนตั้งค่า CORS ---
+
+            proxy_pass http://python-app:8000/; # ส่งไปที่ Service python-app ใน Docker
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }
+}
